@@ -166,7 +166,7 @@ func main() {
 	defer apiClient.Close()
 
 	res, err := apiClient.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Name:containerName,
+		Name: containerName,
 		Image: imageName,
 		Config: &container.Config{
 			Env: envVars,
