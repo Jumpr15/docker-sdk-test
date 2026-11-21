@@ -12,16 +12,12 @@ import (
 	"github.com/moby/moby/client"
 )
 
-// converts map of ENV_VAR_NAME: INT_VALUE to passable array into docker env config as arg
-func MapToEnvArr(envMap map[string]int) []string {
-	var envArr []string
-	var envVar string
-	for k, v := range envMap {
-		envVar = fmt.Sprintf("%s=%s", k, strconv.Itoa(v))
-		envArr = append(envArr, envVar)
-	}
-	return envArr
+type ContainerLifecycle interface {
+	CreateContainer()
+	StopContainer()
 }
+
+
 
 type PortConfig struct {
 	AddressString string 
@@ -31,6 +27,17 @@ type PortConfig struct {
 	Address netip.Addr
 	HostPort network.Port
 	ExposedPort network.Port
+}
+
+// converts map of ENV_VAR_NAME: INT_VALUE to passable array into docker env config as arg
+func MapToEnvArr(envMap map[string]int) []string {
+	var envArr []string
+	var envVar string
+	for k, v := range envMap {
+		envVar = fmt.Sprintf("%s=%s", k, strconv.Itoa(v))
+		envArr = append(envArr, envVar)
+	}
+	return envArr
 }
 
 // converts string list of ports to expose for a container to docker Config/HostConfig compatible types to pass as args
