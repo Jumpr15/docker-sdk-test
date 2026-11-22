@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net/netip"
-	"strconv"
-	"testing/quick"
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
@@ -18,11 +16,24 @@ type ContainerLifecycle interface {
 	StopContainer()
 }
 
-type MobyContainerLifecycle struct {}
+type MobyClient struct {
+	PortConfig
+	ImageName string
+	ContainerID string
+}
 
-func (mb *MobyContainerLifecycle) CreateContainer() {}
+func (mb *MobyClient) CreateContainer() {}
 
-func (mb *MobyContainerLifecycle) StopContainer() {}
+func (mb *MobyClient) StopContainer() {}
+
+func NewMobyClient(imageName string, containerID string, portConfig PortConfig) (*MobyClient) {
+	client := MobyClient{
+		ImageName: imageName,
+		ContainerID: containerID,
+		PortConfig: portConfig,
+	}
+	return &client
+}
 
 type PortConfig struct {
 	Protocol network.IPProtocol // represented by string type
