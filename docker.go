@@ -2,10 +2,11 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/netip"
-	"fmt"
 	"strconv"
+	"testing/quick"
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
@@ -17,24 +18,47 @@ type ContainerLifecycle interface {
 	StopContainer()
 }
 
+type MobyContainerLifecycle struct {}
 
+func (mb *MobyContainerLifecycle) CreateContainer() {}
+
+func (mb *MobyContainerLifecycle) StopContainer() {}
 
 type PortConfig struct {
-	AddressString string 
-	HostInt uint16 // represented by int type
-	ExposedInt uint16 // represented by int type
 	Protocol network.IPProtocol // represented by string type
 	Address netip.Addr
 	HostPort network.Port
 	ExposedPort network.Port
 }
 
-// converts map of ENV_VAR_NAME: INT_VALUE to passable array into docker env config as arg
-func MapToEnvArr(envMap map[string]int) []string {
+func NewPortConfig(Address string, HostPort uint16, ExposedPort uint16, Protocol network.IPProtocol) (PortConfig) {
+	address, err := netip.ParseAddr(Address)
+	if err != nil {
+		log.Fatal(err)
+	}
+	hostPort, ok := network.PortFrom(HostPort, Protocol)
+	if ok == false  {
+		log.Fatal("Error occurred during converting HostInt to HostPort")
+	}
+	exposedPort, ok := network.PortFrom(ExposedPort, Protocol)	
+	if ok == false {
+		log.Fatal("Error occurred during converting ExposedInt to ExposedPort")
+	}
+	portConfig := PortConfig{
+		Protocol: Protocol,
+		Address: address,
+		HostPort: hostPort,
+		ExposedPort: exposedPort,
+	}
+	return portConfig
+}
+
+// converts map of ENV_VAR_NAME: ANY_TYPE_VALUE to passable array into docker env config as arg
+func MapToEnvArr(envMap map[string]any) []string {
 	var envArr []string
 	var envVar string
 	for k, v := range envMap {
-		envVar = fmt.Sprintf("%s=%s", k, strconv.Itoa(v))
+		envVar = fmt.Sprintf("%s=%s", k, fmt.Sprint(v))
 		envArr = append(envArr, envVar)
 	}
 	return envArr
@@ -42,35 +66,17 @@ func MapToEnvArr(envMap map[string]int) []string {
 
 // converts string list of ports to expose for a container to docker Config/HostConfig compatible types to pass as args
 func ConvertPortConfig(portConfigList []PortConfig) (network.PortSet, network.PortMap) { 
-	for i := range portConfigList {
-		portConfigAddress, err := netip.ParseAddr(portConfigList[i].AddressString)
-		if err != nil {
-			log.Fatal(err)
-		}
-		portConfigList[i].Address = portConfigAddress
-
-		portConfigHostPort, ok := network.PortFrom(portConfigList[i].HostInt, portConfigList[i].Protocol)
-		if ok == false  {
-			log.Fatal("Error occurred during converting HostInt to HostPort")
-		}
-		portConfigList[i].HostPort = portConfigHostPort
-
-		portConfigExposedPort, ok := network.PortFrom(portConfigList[i].ExposedInt, portConfigList[i].Protocol)	
-		if ok == false {
-			log.Fatal("Error occurred during converting ExposedInt to ExposedPort")
-		}
-		portConfigList[i].ExposedPort = portConfigExposedPort
-	}
 	fmt.Println(portConfigList)
 
 	exposedPorts := make(map[network.Port]struct{}) // map of type network.PortSet
 	portBindings := make(map[network.Port][]network.PortBinding) // map of type network.PortMap
 
 	for _, portConfig := range portConfigList {
+
 		exposedPorts[portConfig.ExposedPort] = struct{}{} 
 		portBindings[portConfig.HostPort] = []network.PortBinding{{
 			HostIP: portConfig.Address,
-			HostPort: strconv.Itoa(int(portConfig.HostInt)),
+			HostPort: portConfig.HostPort.String(),
 		}}
 	}
 
@@ -82,22 +88,13 @@ func main() {
 	imageName := "envoy-test-app:latest"
 	containerName := "Docker-web-server-example"
 
-	envMap := map[string]int{
+	envMap := map[string]any{
 		"PORT": 80,
-	}
-
-	portConfig := PortConfig{
-		AddressString: "127.0.0.1",
-		HostInt: 80,
-		ExposedInt: 80,
-		Protocol: "tcp",
-	}
-
-	portConfigList := []PortConfig{portConfig}
-
-	//
-
+	} 
 	envVars := MapToEnvArr(envMap)
+
+	portConfig := NewPortConfig("127.0.0.1", 80, 80, "tcp")
+	portConfigList := []PortConfig{portConfig}
 
 	exposedPorts, portBindings := ConvertPortConfig(portConfigList)
 
