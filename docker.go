@@ -6,7 +6,7 @@ import (
 	"log"
 	"net/netip"
 
-	"github.com/moby/moby/api/types/container"
+	// "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 )
@@ -16,23 +16,42 @@ type ContainerLifecycle interface {
 	StopContainer()
 }
 
-type MobyClient struct {
-	PortConfig
+type Containerlet struct {
 	ImageName string
-	ContainerID string
+	ContainerName string
+	EnvMap map[string]any
+	PortConfig PortConfig
+
+	ContainerClient ContainerLifecycle
+
+	ContainerID string // set manually or via container ID
+}
+
+func NewContainerlet(imageName string, containerName string, EnvMap map[string]any, PortConfig PortConfig, ContainerClient ContainerLifecycle) (*Containerlet) {
+	client := Containerlet{
+		ImageName: imageName,
+		ContainerName: containerName,
+		EnvMap: EnvMap,
+		PortConfig: PortConfig,
+		ContainerClient: ContainerClient,
+	}
+	return &client
+}
+
+type MobyClient struct {
+	Ctx context.Context 
+	Client *client.Client
 }
 
 func (mb *MobyClient) CreateContainer() {}
 
 func (mb *MobyClient) StopContainer() {}
 
-func NewMobyClient(imageName string, containerID string, portConfig PortConfig) (*MobyClient) {
-	client := MobyClient{
-		ImageName: imageName,
-		ContainerID: containerID,
-		PortConfig: portConfig,
+func NewMobyClient(ctx context.Context) (*MobyClient) {
+	mobyClient := MobyClient{
+		Ctx: ctx,
 	}
-	return &client
+	return &mobyClient
 }
 
 type PortConfig struct {
@@ -102,42 +121,52 @@ func main() {
 	envMap := map[string]any{
 		"PORT": 80,
 	} 
-	envVars := MapToEnvArr(envMap)
+	// envVars := MapToEnvArr(envMap)
 
 	portConfig := NewPortConfig("127.0.0.1", 80, 80, "tcp")
-	portConfigList := []PortConfig{portConfig}
+	// portConfigList := []PortConfig{portConfig}
 
-	exposedPorts, portBindings := ConvertPortConfig(portConfigList)
+	// exposedPorts, portBindings := ConvertPortConfig(portConfigList)
 
 	//
 
 	ctx := context.Background()
-	apiClient, err := client.New(client.FromEnv)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer apiClient.Close()
+	mobyClient := NewMobyClient(ctx)
 
-	res, err := apiClient.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Name: containerName,
-		Image: imageName,
-		Config: &container.Config{
-			Env: envVars,
-			ExposedPorts: exposedPorts,
-		},
-		HostConfig: &container.HostConfig{
-			PortBindings: portBindings,
-		},
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
+	//
 
-	log.Println("Container ID is:", res.ID)
+	containerlet := NewContainerlet(imageName, containerName, envMap, portConfig,mobyClient)
+	fmt.Println(containerlet)
 
-	_, err = apiClient.ContainerStart(ctx, res.ID, client.ContainerStartOptions{})
-	if err != nil {
-		log.Fatal(err)
-	}
-	
 }
+	// apiClient, err := client.New(client.FromEnv)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+	// defer apiClient.Close()
+
+
+
+// 	res, err := apiClient.ContainerCreate(ctx, client.ContainerCreateOptions{
+// 		Name: containerName,
+// 		Image: imageName,
+// 		Config: &container.Config{
+// 			Env: envVars,
+// 			ExposedPorts: exposedPorts,
+// 		},
+// 		HostConfig: &container.HostConfig{
+// 			PortBindings: portBindings,
+// 		},
+// 	})
+// 	if err != nil {
+// 		log.Fatal(err)
+// 	}
+
+// 	log.Println("Container ID is:", res.ID)
+
+// 	_, err = apiClient.ContainerStart(ctx, res.ID, client.ContainerStartOptions{})
+// 	if err != nil {
+// 		log.Fatal(err)
+// 	}
+	
+// }
