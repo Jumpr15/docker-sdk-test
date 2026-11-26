@@ -1,6 +1,7 @@
 package main
 
 import (
+	"time"
 	"context"
 	"fmt"
 	"log"
@@ -12,7 +13,8 @@ import (
 )
 
 type ContainerLifecycle interface {
-	CreateContainer(ContainerConfig)
+	CreateContainer(ContainerConfig) (string, error)
+	StartContainer() (error)
 	StopContainer()
 }
 
@@ -36,10 +38,18 @@ func NewContainerConfig(imageName string, containerName string, EnvMap map[strin
 type Containerlet struct {
 	ContainerConfig
 	ContainerLifecycle
+
+	ContainerID string
 }
 
 // creates container and if successful returns channel to listen to container events a.k.a detect failures
-func (clet *Containerlet) CreateAndListen() {}
+func (clet *Containerlet) CreateAndListen() {
+	containerID, err := clet.CreateContainer(clet.ContainerConfig)
+	if err != nil {
+		log.Fatal(err)
+	}
+	clet.ContainerID = containerID
+}
 
 func NewContainerlet(ContainerConfig ContainerConfig, ContainerLifecycle ContainerLifecycle) (*Containerlet) {
 	client := Containerlet{
@@ -54,11 +64,10 @@ type MobyClient struct {
 	Client *client.Client
 }
 
-func (mb *MobyClient) CreateContainer(cfg ContainerConfig) {
+func (mb *MobyClient) CreateContainer(cfg ContainerConfig) (string, error) {
 	envVars :=  MapToEnvArr(cfg.EnvMap)
 	
 	exposedPorts, portBindings := ConvertPortConfig([]PortConfig{cfg.PortConfig}) // not good practices change later !!! for port flexibility
-
 
 	res, err := mb.Client.ContainerCreate(mb.Ctx, client.ContainerCreateOptions{
 		Name: cfg.ContainerName,
@@ -71,11 +80,18 @@ func (mb *MobyClient) CreateContainer(cfg ContainerConfig) {
 			PortBindings: portBindings,
 		},
 	})
+
+	log.Println("Container ID is:", res.ID)
+
+	return res.ID, err
+}
+
+func (mb *MobyClient) StartContainer(containerID string) (error) {
+	_, err := mb.Client.ContainerStart(mb.Ctx, containerID, client.ContainerStartOptions{})
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	log.Println(res) // res.ID is string for querying for container metadata
+	return err
 }
 
 func (mb *MobyClient) StopContainer() {}
@@ -152,13 +168,15 @@ func ConvertPortConfig(portConfigList []PortConfig) (network.PortSet, network.Po
 
 func main() {
 	imageName := "envoy-test-app:latest"
-	containerName := "Docker-web-server-example"
+	containerName := "Docker-web-server-example-2"
 	envMap := map[string]any{
 		"PORT": 80,
 	} 
 	portConfig := NewPortConfig("127.0.0.1", 80, 80, "tcp")
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	mobyClient, err := NewMobyClient(ctx)
 	if err != nil {
 		log.Fatal("encountered enough when creating moby api client", err)
@@ -167,7 +185,10 @@ func main() {
 	containerConfig := NewContainerConfig(imageName, containerName, envMap, portConfig)
 
 	containerlet := NewContainerlet(containerConfig, mobyClient)
-	fmt.Println(containerlet)
+	// fmt.Println(containerlet)
+
+	// containerlet.CreateContainer(containerlet.ContainerConfig)
+	containerlet.CreateAndListen()
 
 }
 
