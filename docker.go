@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/netip"
+	"strings"
 	"time"
 
 	"github.com/moby/moby/api/types/container"
@@ -49,6 +50,11 @@ func (clet *Containerlet) CreateAndListen() {
 		log.Fatal(err)
 	}
 	clet.ContainerID = containerID
+
+	err = clet.StartContainer(clet.ContainerID)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 func NewContainerlet(ContainerConfig ContainerConfig, ContainerLifecycle ContainerLifecycle) *Containerlet {
@@ -68,6 +74,9 @@ func (mb *MobyClient) CreateContainer(cfg ContainerConfig) (string, error) {
 	envVars := MapToEnvArr(cfg.EnvMap)
 
 	exposedPorts, portBindings := ConvertPortConfig([]PortConfig{cfg.PortConfig}) // not good practices change later !!! for port flexibility
+
+	log.Println(exposedPorts)
+	log.Println(portBindings)
 
 	res, err := mb.Client.ContainerCreate(mb.Ctx, client.ContainerCreateOptions{
 		Name:  cfg.ContainerName,
@@ -155,10 +164,12 @@ func ConvertPortConfig(portConfigList []PortConfig) (network.PortSet, network.Po
 
 	for _, portConfig := range portConfigList {
 
+		hostPort, _, _ := strings.Cut(portConfig.HostPort.String(), "/")
+
 		exposedPorts[portConfig.ExposedPort] = struct{}{}
-		portBindings[portConfig.HostPort] = []network.PortBinding{{
+		portBindings[portConfig.ExposedPort] = []network.PortBinding{{
 			HostIP:   portConfig.Address,
-			HostPort: portConfig.HostPort.String(),
+			HostPort: hostPort,
 		}}
 	}
 
@@ -172,7 +183,7 @@ func main() {
 	envMap := map[string]any{
 		"PORT": 80,
 	}
-	portConfig := NewPortConfig("127.0.0.1", 80, 80, "tcp")
+	portConfig := NewPortConfig("127.0.0.1", 8090, 80, "tcp")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -186,6 +197,8 @@ func main() {
 
 	containerlet := NewContainerlet(containerConfig, mobyClient)
 	// fmt.Println(containerlet)
+
+	// need to pull iamge before creating
 
 	// containerlet.CreateContainer(containerlet.ContainerConfig)
 	containerlet.CreateAndListen()
