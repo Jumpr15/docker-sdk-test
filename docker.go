@@ -1,11 +1,11 @@
 package main
 
 import (
-	"time"
 	"context"
 	"fmt"
 	"log"
 	"net/netip"
+	"time"
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
@@ -14,23 +14,23 @@ import (
 
 type ContainerLifecycle interface {
 	CreateContainer(ContainerConfig) (string, error)
-	StartContainer() (error)
+	StartContainer(string) error
 	StopContainer()
 }
 
 type ContainerConfig struct {
-	ImageName string
+	ImageName     string
 	ContainerName string
-	EnvMap map[string]any
-	PortConfig PortConfig
+	EnvMap        map[string]any
+	PortConfig    PortConfig
 }
 
-func NewContainerConfig(imageName string, containerName string, EnvMap map[string]any, PortConfig PortConfig) (ContainerConfig) {
+func NewContainerConfig(imageName string, containerName string, EnvMap map[string]any, PortConfig PortConfig) ContainerConfig {
 	config := ContainerConfig{
-		ImageName: imageName,
+		ImageName:     imageName,
 		ContainerName: containerName,
-		EnvMap: EnvMap,
-		PortConfig: PortConfig,
+		EnvMap:        EnvMap,
+		PortConfig:    PortConfig,
 	}
 	return config
 }
@@ -51,29 +51,29 @@ func (clet *Containerlet) CreateAndListen() {
 	clet.ContainerID = containerID
 }
 
-func NewContainerlet(ContainerConfig ContainerConfig, ContainerLifecycle ContainerLifecycle) (*Containerlet) {
+func NewContainerlet(ContainerConfig ContainerConfig, ContainerLifecycle ContainerLifecycle) *Containerlet {
 	client := Containerlet{
-		ContainerConfig: ContainerConfig,
+		ContainerConfig:    ContainerConfig,
 		ContainerLifecycle: ContainerLifecycle,
 	}
 	return &client
 }
 
 type MobyClient struct {
-	Ctx context.Context 
+	Ctx    context.Context
 	Client *client.Client
 }
 
 func (mb *MobyClient) CreateContainer(cfg ContainerConfig) (string, error) {
-	envVars :=  MapToEnvArr(cfg.EnvMap)
-	
+	envVars := MapToEnvArr(cfg.EnvMap)
+
 	exposedPorts, portBindings := ConvertPortConfig([]PortConfig{cfg.PortConfig}) // not good practices change later !!! for port flexibility
 
 	res, err := mb.Client.ContainerCreate(mb.Ctx, client.ContainerCreateOptions{
-		Name: cfg.ContainerName,
+		Name:  cfg.ContainerName,
 		Image: cfg.ImageName,
 		Config: &container.Config{
-			Env: envVars,
+			Env:          envVars,
 			ExposedPorts: exposedPorts,
 		},
 		HostConfig: &container.HostConfig{
@@ -86,7 +86,7 @@ func (mb *MobyClient) CreateContainer(cfg ContainerConfig) (string, error) {
 	return res.ID, err
 }
 
-func (mb *MobyClient) StartContainer(containerID string) (error) {
+func (mb *MobyClient) StartContainer(containerID string) error {
 	_, err := mb.Client.ContainerStart(mb.Ctx, containerID, client.ContainerStartOptions{})
 	if err != nil {
 		log.Fatal(err)
@@ -100,36 +100,36 @@ func NewMobyClient(ctx context.Context) (*MobyClient, error) {
 	c, err := client.New() // use fromenv later to inject env variables
 	// defer client.Close()
 	mobyClient := MobyClient{
-		Ctx: ctx,
-		Client: c, // dont forget to close 
+		Ctx:    ctx,
+		Client: c, // dont forget to close
 	}
 	return &mobyClient, err
 }
 
 type PortConfig struct {
-	Protocol network.IPProtocol // represented by string type
-	Address netip.Addr
-	HostPort network.Port
+	Protocol    network.IPProtocol // represented by string type
+	Address     netip.Addr
+	HostPort    network.Port
 	ExposedPort network.Port
 }
 
-func NewPortConfig(Address string, HostPort uint16, ExposedPort uint16, Protocol network.IPProtocol) (PortConfig) {
+func NewPortConfig(Address string, HostPort uint16, ExposedPort uint16, Protocol network.IPProtocol) PortConfig {
 	address, err := netip.ParseAddr(Address)
 	if err != nil {
 		log.Fatal(err)
 	}
 	hostPort, ok := network.PortFrom(HostPort, Protocol)
-	if ok == false  {
+	if ok == false {
 		log.Fatal("Error occurred during converting HostInt to HostPort")
 	}
-	exposedPort, ok := network.PortFrom(ExposedPort, Protocol)	
+	exposedPort, ok := network.PortFrom(ExposedPort, Protocol)
 	if ok == false {
 		log.Fatal("Error occurred during converting ExposedInt to ExposedPort")
 	}
 	portConfig := PortConfig{
-		Protocol: Protocol,
-		Address: address,
-		HostPort: hostPort,
+		Protocol:    Protocol,
+		Address:     address,
+		HostPort:    hostPort,
 		ExposedPort: exposedPort,
 	}
 	return portConfig
@@ -147,17 +147,17 @@ func MapToEnvArr(envMap map[string]any) []string {
 }
 
 // converts string list of ports to expose for a container to docker Config/HostConfig compatible types to pass as args
-func ConvertPortConfig(portConfigList []PortConfig) (network.PortSet, network.PortMap) { 
+func ConvertPortConfig(portConfigList []PortConfig) (network.PortSet, network.PortMap) {
 	fmt.Println(portConfigList)
 
-	exposedPorts := make(map[network.Port]struct{}) // map of type network.PortSet
+	exposedPorts := make(map[network.Port]struct{})              // map of type network.PortSet
 	portBindings := make(map[network.Port][]network.PortBinding) // map of type network.PortMap
 
 	for _, portConfig := range portConfigList {
 
-		exposedPorts[portConfig.ExposedPort] = struct{}{} 
+		exposedPorts[portConfig.ExposedPort] = struct{}{}
 		portBindings[portConfig.HostPort] = []network.PortBinding{{
-			HostIP: portConfig.Address,
+			HostIP:   portConfig.Address,
 			HostPort: portConfig.HostPort.String(),
 		}}
 	}
@@ -167,11 +167,11 @@ func ConvertPortConfig(portConfigList []PortConfig) (network.PortSet, network.Po
 }
 
 func main() {
-	imageName := "envoy-test-app:latest"
+	imageName := "nginx:stable-alpine3.24-perl"
 	containerName := "Docker-web-server-example-2"
 	envMap := map[string]any{
 		"PORT": 80,
-	} 
+	}
 	portConfig := NewPortConfig("127.0.0.1", 80, 80, "tcp")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -213,5 +213,5 @@ func main() {
 // 	if err != nil {
 // 		log.Fatal(err)
 // 	}
-	
+
 // }
